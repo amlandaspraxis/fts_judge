@@ -102,6 +102,24 @@ async function initSupabaseSeed() {
         }))
       );
 
+      // Seed initial participants
+      if (memoryDb.participants && memoryDb.participants.length > 0) {
+        await supabase.from('participants').upsert(
+          memoryDb.participants.map(p => ({
+            id: p.id,
+            event_id: p.eventId,
+            category_id: p.categoryId,
+            participant_code: p.participantCode,
+            registration_number: p.registrationNumber,
+            name: p.name,
+            phone_number: p.phoneNumber,
+            routine_title: p.routineTitle,
+            act: p.act,
+            status: p.status || 'ACTIVE'
+          }))
+        );
+      }
+
       console.log('✅ [Database] Supabase initial seed completed successfully.');
     }
   } catch (err) {
@@ -362,7 +380,6 @@ export const dbService = {
       const event = await this.getPrimaryEvent();
       const payload = {
         status,
-        ...additionalUpdates,
         updated_at: new Date().toISOString()
       };
       if (additionalUpdates.judgingOpenAt) payload.judging_open_at = additionalUpdates.judgingOpenAt;
@@ -370,6 +387,8 @@ export const dbService = {
       if (additionalUpdates.votingOpenAt) payload.voting_open_at = additionalUpdates.votingOpenAt;
       if (additionalUpdates.votingCloseAt) payload.voting_close_at = additionalUpdates.votingCloseAt;
       if (additionalUpdates.resultsLocked !== undefined) payload.results_locked = additionalUpdates.resultsLocked;
+      if (additionalUpdates.judgeWeight !== undefined) payload.judge_weight = additionalUpdates.judgeWeight;
+      if (additionalUpdates.audienceWeight !== undefined) payload.audience_weight = additionalUpdates.audienceWeight;
 
       const { data, error } = await supabase
         .from('events')
