@@ -53,6 +53,20 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     if (token) {
+      // Determine if this is an audience session
+      let isAudience = false;
+      try {
+        const saved = user || JSON.parse(localStorage.getItem('fts_auth_user') || 'null');
+        const audSession = sessionStorage.getItem('fts_audience_session');
+        if (
+          saved?.role === 'AUDIENCE' || 
+          audSession ||
+          (typeof token === 'string' && token.startsWith('fts_aud_'))
+        ) {
+          isAudience = true;
+        }
+      } catch {}
+
       api.get('/auth/me')
         .then(res => {
           if (res.success && res.data?.user) {
@@ -60,11 +74,15 @@ export function AuthProvider({ children }) {
             try {
               localStorage.setItem('fts_auth_user', JSON.stringify(res.data.user));
             } catch {}
-          } else if (res?.status === 401) {
+          } else if (res?.status === 401 && !isAudience) {
             logout();
           }
         })
         .catch(err => {
+          // Audience users must NEVER be logged out due to auth/me network, token, or offline errors
+          if (isAudience) {
+            return;
+          }
           if (err?.status === 401 || err?.code === 'INVALID_TOKEN' || err?.code === 'UNAUTHORIZED') {
             logout();
           }

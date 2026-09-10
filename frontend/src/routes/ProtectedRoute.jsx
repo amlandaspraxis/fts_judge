@@ -29,7 +29,10 @@ export default function ProtectedRoute({ allowedRoles = [] }) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  if (allowedRoles.length > 0 && !allowedRoles.includes(user.role)) {
+  const userRole = (user.role || '').toUpperCase();
+  const hasAllowedRole = allowedRoles.length === 0 || allowedRoles.some(r => r.toUpperCase() === userRole);
+
+  if (!hasAllowedRole) {
     // Redirect to the user's primary portal if trying to access unauthorized route
     const roleRoutes = {
       ADMIN: '/admin/dashboard',
@@ -37,7 +40,7 @@ export default function ProtectedRoute({ allowedRoles = [] }) {
       AUDIENCE: '/audience/dashboard',
       HELP_DESK: '/helpdesk/dashboard'
     };
-    return <Navigate to={roleRoutes[user.role] || '/login'} replace />;
+    return <Navigate to={roleRoutes[userRole] || '/login'} replace />;
   }
 
   return <Outlet />;

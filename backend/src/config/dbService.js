@@ -197,23 +197,26 @@ export const dbService = {
 
   async findUserById(id) {
     if (useSupabase()) {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', id)
-        .single();
-      if (!error && data) {
-        return {
-          id: data.id,
-          name: data.name,
-          email: data.email,
-          passwordHash: data.password_hash,
-          role: data.role,
-          status: data.status,
-          createdAt: data.created_at
-        };
+      try {
+        const { data, error } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', id)
+          .single();
+        if (!error && data) {
+          return {
+            id: data.id,
+            name: data.name,
+            email: data.email,
+            passwordHash: data.password_hash,
+            role: data.role,
+            status: data.status,
+            createdAt: data.created_at
+          };
+        }
+      } catch (err) {
+        // Fall back to memoryDb
       }
-      return null;
     }
     return memoryDb.users.find(u => u.id === id) || null;
   },

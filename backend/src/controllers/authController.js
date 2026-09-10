@@ -216,7 +216,15 @@ export const audienceLogin = (req, res) => {
     const userEmail = user?.email || cleanEmail;
 
     const token = jwt.sign(
-      { userId, role: 'AUDIENCE', name: userName, deviceSession: Date.now() },
+      { 
+        userId, 
+        role: 'AUDIENCE', 
+        name: userName, 
+        email: userEmail,
+        studentId: cleanReg,
+        regNo: cleanReg,
+        deviceSession: Date.now() 
+      },
       ENV.JWT_SECRET,
       { expiresIn: '12h' }
     );
@@ -279,7 +287,15 @@ export const audienceOtpLogin = (req, res) => {
     const userEmail = user?.email || cleanEmail || `${cleanReg.toLowerCase()}@student.local`;
 
     const token = jwt.sign(
-      { userId, role: 'AUDIENCE', name: userName, deviceSession: Date.now() },
+      { 
+        userId, 
+        role: 'AUDIENCE', 
+        name: userName, 
+        email: userEmail,
+        studentId: cleanReg,
+        regNo: cleanReg,
+        deviceSession: Date.now() 
+      },
       ENV.JWT_SECRET,
       { expiresIn: '12h' }
     );
