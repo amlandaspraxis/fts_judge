@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Environment files & secrets (Strict prevention)
+.env
+.env.*
+*.env
+*.env.*
+!.env.example
+!.env.template
+
+# Logs & debugging
+logs/
+*.log
+npm-debug.log*
+
+# Database & local dumps
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+
+# OS & Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
