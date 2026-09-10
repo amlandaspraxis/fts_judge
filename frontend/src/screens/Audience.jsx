@@ -70,49 +70,69 @@ export default function AudienceView({ current, votingOpen, votes = {}, setVotes
 
     setLoading(true);
     try {
-      const res = await fetch('/api/auth/audience-login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          regNo: cleanRegNo, 
-          studentId: cleanRegNo, 
-          phone: cleanPhone, 
-          email: cleanEmail 
-        })
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.message || "Audience sign in failed.");
-      }
+      let data = null;
+      let networkFailed = false;
 
-      if (data.data?.token) {
+      try {
+        const res = await fetch('/api/auth/audience-login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            regNo: cleanRegNo, 
+            studentId: cleanRegNo, 
+            phone: cleanPhone, 
+            email: cleanEmail 
+          })
+        });
+        const text = await res.text();
         try {
-          localStorage.setItem('fts_auth_token', data.data.token);
-        } catch {}
+          data = text ? JSON.parse(text) : null;
+        } catch {
+          data = null;
+        }
+
+        if (res.ok && data?.success) {
+          if (data.data?.token) {
+            try {
+              localStorage.setItem('fts_auth_token', data.data.token);
+            } catch {}
+          }
+          const verifiedSession = {
+            regNo: cleanRegNo,
+            studentId: cleanRegNo,
+            email: cleanEmail,
+            phone: cleanPhone,
+            verifiedAt: new Date().toISOString()
+          };
+          setSession(verifiedSession);
+          sessionStorage.setItem('fts_audience_session', JSON.stringify(verifiedSession));
+          return;
+        } else if (data?.message && !data?.success) {
+          throw new Error(data.message);
+        } else {
+          networkFailed = true;
+        }
+      } catch (fetchErr) {
+        if (data?.message) {
+          throw fetchErr;
+        }
+        networkFailed = true;
       }
 
-      const verifiedSession = {
-        regNo: cleanRegNo,
-        email: cleanEmail,
-        phone: cleanPhone,
-        verifiedAt: new Date().toISOString()
-      };
-      setSession(verifiedSession);
-      sessionStorage.setItem('fts_audience_session', JSON.stringify(verifiedSession));
-    } catch (err) {
       // Fallback for standalone/mock mode if backend is unreachable
-      if (cleanRegNo && cleanPhone.length === 10 && emailRegex.test(cleanEmail)) {
+      if (networkFailed && cleanRegNo && cleanPhone.length === 10 && emailRegex.test(cleanEmail)) {
         const fallbackSession = {
           regNo: cleanRegNo,
+          studentId: cleanRegNo,
           email: cleanEmail,
           phone: cleanPhone,
           verifiedAt: new Date().toISOString()
         };
         setSession(fallbackSession);
         sessionStorage.setItem('fts_audience_session', JSON.stringify(fallbackSession));
-      } else {
-        setError(err.message || "Failed to sign in. Please check your credentials.");
       }
+    } catch (err) {
+      setError(err.message || "Failed to sign in. Please check your credentials.");
     } finally {
       setLoading(false);
     }
@@ -250,30 +270,42 @@ export default function AudienceView({ current, votingOpen, votes = {}, setVotes
     const deviceId = getClientDeviceId();
     
     try {
-      const res = await fetch('/api/votes/cast', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'x-device-id': deviceId
-        },
-        body: JSON.stringify({
-          participantId: current.id,
-          studentId: voterRegNo,
-          score: Number(score),
-          categoryId: current.categoryId || current.category_id,
-          deviceId: deviceId,
-          deviceFingerprint: deviceId
-        })
-      });
-      
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        setError(data.message || "You have already voted in this category. Each person is allowed to vote only once per category.");
-        return;
+      try {
+        const res = await fetch('/api/votes/cast', {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'x-device-id': deviceId
+          },
+          body: JSON.stringify({
+            participantId: current.id,
+            studentId: voterRegNo,
+            score: Number(score),
+            categoryId: current.categoryId || current.category_id,
+            deviceId: deviceId,
+            deviceFingerprint: deviceId
+          })
+        });
+        
+        const text = await res.text();
+        let data = null;
+        try {
+          data = text ? JSON.parse(text) : null;
+        } catch {}
+
+        if (res.ok && data?.success) {
+          setVotes(current.id, voterRegNo, score);
+          return;
+        } else if (data?.message) {
+          setError(data.message);
+          return;
+        }
+      } catch (err) {
+        // Standalone / offline mode: record vote directly into state
       }
       setVotes(current.id, voterRegNo, score);
     } catch (err) {
-      setError("You have already voted in this category. Each person is allowed to vote only once per category.");
+      setError(err.message || "Failed to record vote. Please try again.");
     }
   };
 

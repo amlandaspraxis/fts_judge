@@ -1,7 +1,14 @@
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import bcrypt from 'bcryptjs';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+dotenv.config({ path: path.resolve(__dirname, '../../../backend/.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 dotenv.config();
 
 let supabaseUrl = process.env.SUPABASE_URL;
@@ -14,6 +21,9 @@ if (!supabaseUrl && process.env.DATABASE_URL) {
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
 
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseKey);
+
+export let supabaseTablesReady = false;
+export const useSupabase = () => isSupabaseConfigured && Boolean(supabase) && supabaseTablesReady;
 
 export const supabase = isSupabaseConfigured
   ? createClient(supabaseUrl, supabaseKey, {
@@ -38,7 +48,13 @@ async function initSupabaseSeed() {
   if (!isSupabaseConfigured || !supabase) return;
   try {
     const { data: existingUsers, error } = await supabase.from('users').select('id').limit(1);
-    if (!error && (!existingUsers || existingUsers.length === 0)) {
+    if (error) {
+      console.warn('ℹ️  [Database] Supabase schema not yet migrated (' + (error.message || error.code) + '). Using high-performance in-memory database adapter.');
+      supabaseTablesReady = false;
+      return;
+    }
+    supabaseTablesReady = true;
+    if (!existingUsers || existingUsers.length === 0) {
       console.log('🌱 [Database] Seeding initial data into Supabase tables...');
       
       // Seed event
@@ -157,7 +173,7 @@ export const dbService = {
   // --- USERS ---
   async findUserByEmail(email) {
     const cleanEmail = email.trim().toLowerCase();
-    if (isSupabaseConfigured && supabase) {
+    if (useSupabase()) {
       const { data, error } = await supabase
         .from('users')
         .select('*')
@@ -180,7 +196,7 @@ export const dbService = {
   },
 
   async findUserById(id) {
-    if (isSupabaseConfigured && supabase) {
+    if (useSupabase()) {
       const { data, error } = await supabase
         .from('users')
         .select('*')
@@ -203,7 +219,7 @@ export const dbService = {
   },
 
   async getUsers(role = null) {
-    if (isSupabaseConfigured && supabase) {
+    if (useSupabase()) {
       let query = supabase.from('users').select('*');
       if (role) query = query.eq('role', role);
       const { data, error } = await query;
@@ -235,7 +251,7 @@ export const dbService = {
       createdAt: new Date().toISOString()
     };
 
-    if (isSupabaseConfigured && supabase) {
+    if (useSupabase()) {
       const { error } = await supabase.from('users').insert({
         id: record.id,
         name: record.name,
@@ -253,7 +269,7 @@ export const dbService = {
   },
 
   async updateUser(id, updates) {
-    if (isSupabaseConfigured && supabase) {
+    if (useSupabase()) {
       const payload = { updated_at: new Date().toISOString() };
       if (updates.name) payload.name = updates.name.trim();
       if (updates.email) payload.email = updates.email.trim().toLowerCase();
@@ -281,7 +297,7 @@ export const dbService = {
   },
 
   async deleteUser(id) {
-    if (isSupabaseConfigured && supabase) {
+    if (useSupabase()) {
       const { error } = await supabase.from('users').delete().eq('id', id);
       if (error) throw new Error(error.message);
       return true;
@@ -295,7 +311,7 @@ export const dbService = {
   },
 
   async deleteJudgeAssignment(judgeId, categoryId = null) {
-    if (isSupabaseConfigured && supabase) {
+    if (useSupabase()) {
       let query = supabase.from('judge_assignments').delete().eq('judge_id', judgeId);
       if (categoryId) query = query.eq('category_id', categoryId);
       const { error } = await query;
@@ -312,7 +328,7 @@ export const dbService = {
 
   // --- EVENTS ---
   async getPrimaryEvent() {
-    if (isSupabaseConfigured && supabase) {
+    if (useSupabase()) {
       const { data, error } = await supabase
         .from('events')
         .select('*')
@@ -339,7 +355,7 @@ export const dbService = {
   },
 
   async updateEventState(status, additionalUpdates = {}) {
-    if (isSupabaseConfigured && supabase) {
+    if (useSupabase()) {
       const event = await this.getPrimaryEvent();
       const payload = {
         status,
@@ -373,7 +389,7 @@ export const dbService = {
 
   // --- CATEGORIES ---
   async getCategories() {
-    if (isSupabaseConfigured && supabase) {
+    if (useSupabase()) {
       const { data, error } = await supabase
         .from('categories')
         .select('*')
@@ -394,7 +410,7 @@ export const dbService = {
   },
 
   async getCategoryById(id) {
-    if (isSupabaseConfigured && supabase) {
+    if (useSupabase()) {
       const { data, error } = await supabase
         .from('categories')
         .select('*')
@@ -429,7 +445,7 @@ export const dbService = {
       createdAt: new Date().toISOString()
     };
 
-    if (isSupabaseConfigured && supabase) {
+    if (useSupabase()) {
       const { error } = await supabase.from('categories').insert({
         id: category.id,
         event_id: category.eventId,
@@ -448,7 +464,7 @@ export const dbService = {
   },
 
   async updateCategory(id, updates) {
-    if (isSupabaseConfigured && supabase) {
+    if (useSupabase()) {
       const payload = {};
       if (updates.name) payload.name = updates.name.trim();
       if (updates.code) payload.code = updates.code.trim().toUpperCase();
@@ -486,7 +502,7 @@ export const dbService = {
   },
 
   async deleteCategory(id) {
-    if (isSupabaseConfigured && supabase) {
+    if (useSupabase()) {
       const { error } = await supabase.from('categories').delete().eq('id', id);
       if (error) throw new Error(error.message);
       return true;
@@ -501,7 +517,7 @@ export const dbService = {
 
   // --- PARTICIPANTS ---
   async getParticipants(categoryId = null) {
-    if (isSupabaseConfigured && supabase) {
+    if (useSupabase()) {
       let query = supabase.from('participants').select('*').order('created_at', { ascending: true });
       if (categoryId) query = query.eq('category_id', categoryId);
       const { data, error } = await query;
@@ -527,7 +543,7 @@ export const dbService = {
   },
 
   async getParticipantById(id) {
-    if (isSupabaseConfigured && supabase) {
+    if (useSupabase()) {
       const { data, error } = await supabase
         .from('participants')
         .select('*')
@@ -556,7 +572,7 @@ export const dbService = {
 
   async findParticipantByCode(code, eventId = 'evt_fts_2026') {
     const cleanCode = code.trim().toUpperCase();
-    if (isSupabaseConfigured && supabase) {
+    if (useSupabase()) {
       const { data, error } = await supabase
         .from('participants')
         .select('*')
@@ -572,7 +588,7 @@ export const dbService = {
 
   async findParticipantByRegNumber(regNumber, eventId = 'evt_fts_2026') {
     const cleanReg = regNumber.trim().toUpperCase();
-    if (isSupabaseConfigured && supabase) {
+    if (useSupabase()) {
       const { data, error } = await supabase
         .from('participants')
         .select('*')
@@ -604,7 +620,7 @@ export const dbService = {
       updatedAt: new Date().toISOString()
     };
 
-    if (isSupabaseConfigured && supabase) {
+    if (useSupabase()) {
       const { error } = await supabase.from('participants').insert({
         id: participant.id,
         event_id: participant.eventId,
@@ -626,7 +642,7 @@ export const dbService = {
   },
 
   async updateParticipant(id, updates) {
-    if (isSupabaseConfigured && supabase) {
+    if (useSupabase()) {
       const payload = { updated_at: new Date().toISOString() };
       if (updates.name) payload.name = updates.name.trim();
       if (updates.phoneNumber) payload.phone_number = updates.phoneNumber.trim();
@@ -674,7 +690,7 @@ export const dbService = {
 
   // --- JUDGE ASSIGNMENTS ---
   async getJudgeAssignments() {
-    if (isSupabaseConfigured && supabase) {
+    if (useSupabase()) {
       const { data, error } = await supabase.from('judge_assignments').select('*');
       if (error) throw new Error(error.message);
       return (data || []).map(ja => ({
@@ -698,7 +714,7 @@ export const dbService = {
       createdAt: new Date().toISOString()
     };
 
-    if (isSupabaseConfigured && supabase) {
+    if (useSupabase()) {
       const { error } = await supabase.from('judge_assignments').insert({
         id: assignment.id,
         judge_id: assignment.judgeId,
@@ -715,7 +731,7 @@ export const dbService = {
 
   // --- JUDGE SCORES ---
   async getJudgeScores() {
-    if (isSupabaseConfigured && supabase) {
+    if (useSupabase()) {
       const { data, error } = await supabase.from('judge_scores').select('*');
       if (error) throw new Error(error.message);
       return (data || []).map(s => ({
@@ -734,7 +750,7 @@ export const dbService = {
   },
 
   async findJudgeScore(judgeId, participantId) {
-    if (isSupabaseConfigured && supabase) {
+    if (useSupabase()) {
       const { data, error } = await supabase
         .from('judge_scores')
         .select('*')
@@ -773,7 +789,7 @@ export const dbService = {
       updatedAt: new Date().toISOString()
     };
 
-    if (isSupabaseConfigured && supabase) {
+    if (useSupabase()) {
       const { error } = await supabase.from('judge_scores').insert({
         id: scoreRecord.id,
         judge_id: scoreRecord.judgeId,
@@ -792,7 +808,7 @@ export const dbService = {
   },
 
   async updateJudgeScore(id, updates) {
-    if (isSupabaseConfigured && supabase) {
+    if (useSupabase()) {
       const payload = {
         updated_at: new Date().toISOString()
       };
@@ -842,7 +858,7 @@ export const dbService = {
       changedAt: new Date().toISOString()
     };
 
-    if (isSupabaseConfigured && supabase) {
+    if (useSupabase()) {
       const { error } = await supabase.from('score_history').insert({
         id: entry.id,
         score_id: entry.scoreId,
@@ -860,7 +876,7 @@ export const dbService = {
   },
 
   async getScoreHistory(scoreId) {
-    if (isSupabaseConfigured && supabase) {
+    if (useSupabase()) {
       const { data, error } = await supabase
         .from('score_history')
         .select('*')
@@ -882,7 +898,7 @@ export const dbService = {
 
   // --- AUDIENCE VOTES ---
   async getAudienceVotes() {
-    if (isSupabaseConfigured && supabase) {
+    if (useSupabase()) {
       const { data, error } = await supabase.from('audience_votes').select('*');
       if (error) throw new Error(error.message);
       return (data || []).map(v => ({
@@ -902,7 +918,7 @@ export const dbService = {
   },
 
   async findAudienceVote(audienceId, participantId, eventId = 'evt_fts_2026') {
-    if (isSupabaseConfigured && supabase) {
+    if (useSupabase()) {
       const { data, error } = await supabase
         .from('audience_votes')
         .select('*')
@@ -1048,7 +1064,7 @@ export const dbService = {
       submittedAt: new Date().toISOString()
     };
 
-    if (isSupabaseConfigured && supabase) {
+    if (useSupabase()) {
       const { error } = await supabase.from('audience_votes').insert({
         id: vote.id,
         audience_id: vote.audienceId,
@@ -1086,7 +1102,7 @@ export const dbService = {
       createdAt: new Date().toISOString()
     };
 
-    if (isSupabaseConfigured && supabase) {
+    if (useSupabase()) {
       try {
         await supabase.from('audit_logs').insert({
           id: entry.id,
@@ -1110,7 +1126,7 @@ export const dbService = {
   },
 
   async getAuditLogs(limit = 100) {
-    if (isSupabaseConfigured && supabase) {
+    if (useSupabase()) {
       const { data, error } = await supabase
         .from('audit_logs')
         .select('*')

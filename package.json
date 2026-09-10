@@ -4,8 +4,8 @@
   "scripts": {
     "dev:frontend": "npm --prefix frontend run dev",
     "dev:backend": "npm --prefix backend run dev",
-    "dev": "npm --prefix frontend run dev",
-    "dev:all": "node -e \"const { spawn } = require('child_process'); const b = spawn('npm', ['--prefix', 'backend', 'run', 'dev'], { stdio: 'inherit' }); const f = spawn('npm', ['--prefix', 'frontend', 'run', 'dev'], { stdio: 'inherit' }); process.on('SIGINT', () => { b.kill(); f.kill(); process.exit(); });\"",
+    "dev": "npm run dev:all",
+    "dev:all": "node -e \"const { spawn } = require('child_process'); const b = spawn('npm', ['--prefix', 'backend', 'run', 'dev'], { stdio: 'inherit', shell: true }); const f = spawn('npm', ['--prefix', 'frontend', 'run', 'dev'], { stdio: 'inherit', shell: true }); process.on('SIGINT', () => { b.kill(); f.kill(); process.exit(); });\"",
     "start": "npm --prefix backend run start",
     "build": "npm --prefix frontend run build",
     "preview": "npm --prefix frontend run preview",

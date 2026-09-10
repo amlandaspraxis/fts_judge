@@ -1,19 +1,15 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import {
-  UserPlus,
-  Shield,
+  AlertCircle,
+  ArrowRight,
+  ClipboardList,
+  KeyRound,
   Lock,
   Mail,
-  KeyRound,
-  ArrowRight,
-  AlertCircle,
-  CheckCircle2,
   MonitorPlay,
-  ClipboardList,
-  Sparkles,
-  ShieldAlert
+  UserPlus
 } from 'lucide-react';
 
 export default function RegDeskLogin() {
@@ -26,7 +22,6 @@ export default function RegDeskLogin() {
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  // Registration Desk Sign In with Station PIN verification
   const handleSubmit = async (e) => {
     if (e) e.preventDefault();
     setError('');
@@ -40,7 +35,6 @@ export default function RegDeskLogin() {
       return;
     }
 
-    // Station PIN check: verify against configured Event PIN (default: 4821)
     if (cleanPin && cleanPin !== '4821') {
       setError('Invalid Registration Desk Station Security PIN.');
       return;
@@ -49,10 +43,12 @@ export default function RegDeskLogin() {
     setLoading(true);
     try {
       const user = await login(cleanEmail, cleanPass);
+
       if (user.role !== 'HELP_DESK' && user.role !== 'ADMIN') {
         setError('Unauthorized: This terminal is restricted to Registration & Help Desk personnel.');
         return;
       }
+
       sessionStorage.setItem('fts_desk_session', JSON.stringify({
         id: user.id,
         name: user.name,
@@ -60,9 +56,10 @@ export default function RegDeskLogin() {
         stationAuthorized: true,
         verifiedAt: new Date().toISOString()
       }));
+
       navigate('/helpdesk/dashboard');
     } catch (err) {
-      setError(err.message || 'Help Desk authentication failed. Please verify your officer credentials.');
+      setError(err?.message || 'Help Desk authentication failed. Please verify your officer credentials.');
     } finally {
       setLoading(false);
     }
@@ -78,7 +75,6 @@ export default function RegDeskLogin() {
       padding: '24px 16px',
       background: 'linear-gradient(135deg, #062419 0%, #0A3626 50%, #104C37 100%)'
     }}>
-      {/* Top Branding */}
       <div style={{ marginBottom: 20, textAlign: 'center' }}>
         <img
           src="/main_logo.png"
@@ -92,7 +88,6 @@ export default function RegDeskLogin() {
         />
       </div>
 
-      {/* Main Card */}
       <div style={{
         maxWidth: 480,
         width: '100%',
@@ -102,7 +97,6 @@ export default function RegDeskLogin() {
         boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.45), 0 0 0 1.5px rgba(16, 185, 129, 0.3)',
         border: '2px solid #0A3626'
       }}>
-        {/* Header Badges */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <div style={{
             background: '#0A3626',
@@ -146,7 +140,6 @@ export default function RegDeskLogin() {
           Enter your desk officer credentials to access participant enrollments, chest number allocations, and check-ins.
         </p>
 
-        {/* Error Alert */}
         {error && (
           <div style={{
             color: '#D93025',
@@ -166,7 +159,6 @@ export default function RegDeskLogin() {
           </div>
         )}
 
-        {/* Form */}
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div>
             <label className="evt-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -176,7 +168,7 @@ export default function RegDeskLogin() {
               type="email"
               className="evt-input"
               value={email}
-              onChange={e => setEmail(e.target.value)}
+              onChange={(e) => setEmail(e.target.value)}
               placeholder="helpdesk@event.local"
               autoFocus
               required
@@ -191,7 +183,7 @@ export default function RegDeskLogin() {
               type="password"
               className="evt-input"
               value={password}
-              onChange={e => setPassword(e.target.value)}
+              onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
               required
             />
@@ -205,7 +197,7 @@ export default function RegDeskLogin() {
               type="password"
               className="evt-input evt-mono"
               value={stationPin}
-              onChange={e => setStationPin(e.target.value)}
+              onChange={(e) => setStationPin(e.target.value)}
               placeholder="4-digit event PIN"
               maxLength={6}
             />
@@ -237,7 +229,6 @@ export default function RegDeskLogin() {
           </button>
         </form>
 
-        {/* Security & Audit Protection Info */}
         <div style={{
           marginTop: 18,
           background: '#F0FDF4',
@@ -268,7 +259,6 @@ export default function RegDeskLogin() {
         </div>
       </div>
 
-      {/* Footer Navigation */}
       <div style={{ marginTop: 20, textAlign: 'center', display: 'flex', gap: 18 }}>
         <Link
           to="/login"

@@ -1,7 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../services/api';
-import { Users, CheckCircle2, ArrowRight, ShieldCheck, QrCode } from 'lucide-react';
+import { Users, CheckCircle2, ArrowRight, ShieldCheck, QrCode, MonitorPlay, Sparkles } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { loadStateFromStorage } from '../../lib/eventSync';
+
+const FALLBACK_CATEGORIES = [
+  { id: "dance", name: "Dance", label: "Dance", prefix: "DNC", description: "Solo and group dance performances" },
+  { id: "singing", name: "Singing / Music", label: "Singing / Music", prefix: "MSC", description: "Vocal and instrumental melodies" },
+  { id: "comedy", name: "Comedy", label: "Comedy", prefix: "CMD", description: "Standup and comedic acts" },
+  { id: "band", name: "Band", label: "Band", prefix: "BND", description: "Live musical bands" },
+  { id: "drama", name: "Drama / Theatre", label: "Drama / Theatre", prefix: "DRM", description: "Theatrical sketches and stage plays" },
+  { id: "poetry", name: "Poetry / Spoken Word", label: "Poetry / Spoken Word", prefix: "PTY", description: "Expressive poetry and spoken word" },
+];
 
 export default function AudienceDashboard() {
   const [data, setData] = useState(null);
@@ -9,19 +19,33 @@ export default function AudienceDashboard() {
 
   useEffect(() => {
     api.get('/audience/dashboard')
-      .then(res => setData(res.data))
+      .then(res => {
+        if (res?.data) setData(res.data);
+      })
+      .catch(err => {
+        console.warn('Audience dashboard API offline, using local state:', err?.message);
+      })
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) {
+  const localState = typeof window !== 'undefined' ? loadStateFromStorage() : null;
+  const categories = (data?.categories && data.categories.length > 0) 
+    ? data.categories 
+    : FALLBACK_CATEGORIES;
+
+  const votingOpen = data?.votingOpen !== undefined 
+    ? data.votingOpen 
+    : (localState?.votingOpen !== undefined ? localState.votingOpen : true);
+
+  const votedIds = data?.votedCategoryIds || [];
+
+  if (loading && !data) {
     return <div className="evt-card" style={{ padding: 24, textAlign: 'center' }}>Loading audience portal…</div>;
   }
 
-  const votingOpen = data?.votingOpen;
-  const votedIds = data?.votedCategoryIds || [];
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      {/* Header Banner */}
       <div className="evt-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
         <div>
           <div className="evt-eyebrow">Audience Participation Hub</div>
@@ -31,7 +55,14 @@ export default function AudienceDashboard() {
           </p>
         </div>
 
-        <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <Link
+            to="/audience-live"
+            className="evt-btn evt-btn-teal"
+            style={{ textDecoration: 'none', fontSize: 13, padding: '8px 14px' }}
+          >
+            <MonitorPlay size={15} /> Live Stage Act Voting →
+          </Link>
           <span className={`evt-badge ${votingOpen ? 'evt-badge-ok' : 'evt-badge-wait'}`} style={{ fontSize: 13, padding: '8px 16px' }}>
             {votingOpen ? 'Voting Active' : 'Voting Closed'}
           </span>
@@ -41,7 +72,7 @@ export default function AudienceDashboard() {
       <div className="evt-card">
         <div className="evt-h2" style={{ fontSize: 22 }}>Available Categories</div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 14, marginTop: 14 }}>
-          {data?.categories?.map(c => {
+          {categories.map(c => {
             const alreadyVoted = votedIds.includes(c.id);
             return (
               <div key={c.id} className="evt-card" style={{ padding: 18, background: alreadyVoted ? '#F7F9FD' : '#FFFFFF' }}>

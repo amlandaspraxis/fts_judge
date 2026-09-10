@@ -19,7 +19,29 @@ import api from '../services/api';
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(() => {
+    try {
+      const savedUser = localStorage.getItem('fts_auth_user');
+      if (savedUser) return JSON.parse(savedUser);
+
+      const audSession = sessionStorage.getItem('fts_audience_session');
+      if (audSession) {
+        const parsed = JSON.parse(audSession);
+        return {
+          id: `usr_${parsed.regNo || parsed.studentId}`,
+          name: `Student (${parsed.regNo || parsed.studentId})`,
+          email: parsed.email,
+          studentId: parsed.regNo || parsed.studentId,
+          role: 'AUDIENCE',
+          status: 'ACTIVE'
+        };
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  });
+
   const [token, setToken] = useState(() => {
     try {
       return localStorage.getItem('fts_auth_token');
@@ -27,7 +49,7 @@ export function AuthProvider({ children }) {
       return null;
     }
   });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (token) {
@@ -35,14 +57,18 @@ export function AuthProvider({ children }) {
         .then(res => {
           if (res.success && res.data?.user) {
             setUser(res.data.user);
-          } else {
+            try {
+              localStorage.setItem('fts_auth_user', JSON.stringify(res.data.user));
+            } catch {}
+          } else if (res?.status === 401) {
             logout();
           }
         })
-        .catch(() => logout())
-        .finally(() => setLoading(false));
-    } else {
-      setLoading(false);
+        .catch(err => {
+          if (err?.status === 401 || err?.code === 'INVALID_TOKEN' || err?.code === 'UNAUTHORIZED') {
+            logout();
+          }
+        });
     }
   }, [token]);
 
@@ -67,6 +93,9 @@ export function AuthProvider({ children }) {
       setToken(sessionToken);
     }
     if (sessionUser) {
+      try {
+        localStorage.setItem('fts_auth_user', JSON.stringify(sessionUser));
+      } catch {}
       setUser(sessionUser);
     }
     return sessionUser;
@@ -77,6 +106,9 @@ export function AuthProvider({ children }) {
     if (res.success && res.data?.token) {
       try {
         localStorage.setItem('fts_auth_token', res.data.token);
+        if (res.data.user) {
+          localStorage.setItem('fts_auth_user', JSON.stringify(res.data.user));
+        }
       } catch {}
       setToken(res.data.token);
       setUser(res.data.user);
@@ -94,9 +126,11 @@ export function AuthProvider({ children }) {
     try {
       // Purge all stored credentials and session data
       localStorage.removeItem('fts_auth_token');
+      localStorage.removeItem('fts_auth_user');
       sessionStorage.removeItem('fts_judge_session');
       sessionStorage.removeItem('fts_audience_session');
       sessionStorage.removeItem('fts_user_session');
+      sessionStorage.removeItem('fts_desk_session');
     } catch {}
 
     setToken(null);

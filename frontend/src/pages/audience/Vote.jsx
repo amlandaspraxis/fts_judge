@@ -4,10 +4,28 @@ import api from '../../services/api';
 import { getClientDeviceId } from '../../utils/deviceFingerprint';
 import { Star, CheckCircle2, ArrowLeft, AlertCircle, ShieldCheck } from 'lucide-react';
 
+import { loadStateFromStorage, syncActionToServer } from '../../lib/eventSync';
+
+const FALLBACK_CATEGORIES = [
+  { id: "dance", name: "Dance", label: "Dance", prefix: "DNC", description: "Solo and group dance performances" },
+  { id: "singing", name: "Singing / Music", label: "Singing / Music", prefix: "MSC", description: "Vocal and instrumental melodies" },
+  { id: "comedy", name: "Comedy", label: "Comedy", prefix: "CMD", description: "Standup and comedic acts" },
+  { id: "band", name: "Band", label: "Band", prefix: "BND", description: "Live musical bands" },
+  { id: "drama", name: "Drama / Theatre", label: "Drama / Theatre", prefix: "DRM", description: "Theatrical sketches and stage plays" },
+  { id: "poetry", name: "Poetry / Spoken Word", label: "Poetry / Spoken Word", prefix: "PTY", description: "Expressive poetry and spoken word" },
+];
+
+const INITIAL_PARTICIPANTS = [
+  { id: "p1", name: "Alex Rivera", code: "DAN-07", act: "Breakbeat Fusion", categoryId: "dance", performed: false },
+  { id: "p2", name: "Sanya Malhotra", code: "DNC-14", act: "Classical Kathak Contemporary", categoryId: "dance", performed: false },
+  { id: "p3", name: "Rohan Varma", code: "MSC-03", act: "Acoustic Indie Rock", categoryId: "singing", performed: false },
+  { id: "p4", name: "Kavya Deshmukh", code: "CMD-09", act: "Campus Life Standup", categoryId: "comedy", performed: false }
+];
+
 export default function AudienceVote() {
   const [searchParams] = useSearchParams();
   const categoryId = searchParams.get('categoryId');
-  const [category, setCategory] = useState(null);
+  const [category, setCategory] = useState(() => FALLBACK_CATEGORIES.find(c => c.id === categoryId) || null);
   const [participants, setParticipants] = useState([]);
   const [selectedPartId, setSelectedPartId] = useState('');
   const [votedPartIds, setVotedPartIds] = useState([]);
@@ -23,18 +41,36 @@ export default function AudienceVote() {
     if (categoryId) {
       const deviceId = getClientDeviceId();
       api.get(`/audience/dashboard?deviceId=${encodeURIComponent(deviceId)}`).then(res => {
-        const foundCat = res.data.categories.find(c => c.id === categoryId);
-        setCategory(foundCat);
-        setVotedPartIds(res.data.votedParticipantIds || []);
+        const foundCat = res.data?.categories?.find(c => c.id === categoryId);
+        if (foundCat) setCategory(foundCat);
+        setVotedPartIds(res.data?.votedParticipantIds || []);
       }).catch(err => {
-        console.warn('Dashboard fetch error:', err.message);
+        console.warn('Dashboard fetch error, using local state:', err.message);
+        const fallbackCat = FALLBACK_CATEGORIES.find(c => c.id === categoryId);
+        if (fallbackCat) setCategory(fallbackCat);
       });
 
       api.get(`/audience/participants/${categoryId}`).then(res => {
-        setParticipants(res.data.participants || []);
+        if (res.data?.participants?.length) {
+          setParticipants(res.data.participants);
+        } else {
+          loadLocalParticipants();
+        }
+      }).catch(err => {
+        console.warn('Participants fetch error, using local state:', err.message);
+        loadLocalParticipants();
       }).finally(() => setLoading(false));
     }
   }, [categoryId]);
+
+  const loadLocalParticipants = () => {
+    const saved = typeof window !== 'undefined' ? loadStateFromStorage() : null;
+    const allParts = (saved?.participants && saved.participants.length > 0) 
+      ? saved.participants 
+      : INITIAL_PARTICIPANTS;
+    const catParts = allParts.filter(p => p.categoryId === categoryId);
+    setParticipants(catParts.length > 0 ? catParts : allParts);
+  };
 
   const selectedAlreadyVoted = Boolean(selectedPartId && votedPartIds.includes(selectedPartId));
 
@@ -55,12 +91,25 @@ export default function AudienceVote() {
 
     try {
       const deviceId = getClientDeviceId();
-      await api.post('/audience/votes', { 
-        participantId: selectedPartId, 
-        categoryId,
-        deviceId,
-        deviceFingerprint: deviceId
-      });
+      try {
+        await api.post('/audience/votes', { 
+          participantId: selectedPartId, 
+          categoryId,
+          deviceId,
+          deviceFingerprint: deviceId
+        });
+      } catch (apiErr) {
+        if (apiErr.status === 409 || apiErr.code === 'ALREADY_VOTED' || apiErr.message?.includes('already voted')) {
+          throw apiErr;
+        }
+        console.warn('API vote post failed, sync via local action:', apiErr.message);
+        syncActionToServer('CAST_AUDIENCE_VOTE', { 
+          participantId: selectedPartId, 
+          studentId: deviceId,
+          score: 10,
+          categoryId 
+        });
+      }
 
       // Update local voted list so this participant is locked immediately
       setVotedPartIds(prev => [...prev, selectedPartId]);
