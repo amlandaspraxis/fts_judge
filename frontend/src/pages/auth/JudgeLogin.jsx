@@ -57,13 +57,6 @@ export default function JudgeLogin() {
     }
   };
 
-  // Quick fill helper for Judge 1
-  const quickFillJudge = () => {
-    setEmail('judge1@event.local');
-    setPassword('password123');
-    setError('');
-  };
-
   return (
     <div style={{
       minHeight: '100vh',
@@ -244,35 +237,6 @@ export default function JudgeLogin() {
               Per competition regulations (Section 10), submitted scores can be modified <strong>only once</strong> to ensure tamper-proof evaluation. Judge scores contribute 85% of total score.
             </div>
           </div>
-        </div>
-
-        {/* Quick Demo Fill Helper */}
-        <div style={{
-          marginTop: 16,
-          paddingTop: 12,
-          borderTop: '1px solid #E2E8F0',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center'
-        }}>
-          <span style={{ fontSize: 11, color: '#64748B' }}>
-            Pre-issued: <code style={{ fontWeight: 800, color: '#0369A1' }}>judge1@event.local</code>
-          </span>
-          <button
-            type="button"
-            onClick={quickFillJudge}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: '#0284C7',
-              fontSize: 11.5,
-              fontWeight: 700,
-              cursor: 'pointer',
-              textDecoration: 'underline'
-            }}
-          >
-            Fill Test Judge Credentials
-          </button>
         </div>
       </div>
 

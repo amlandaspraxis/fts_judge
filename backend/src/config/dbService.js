@@ -4,7 +4,13 @@ import bcrypt from 'bcryptjs';
 
 dotenv.config();
 
-const supabaseUrl = process.env.SUPABASE_URL;
+let supabaseUrl = process.env.SUPABASE_URL;
+if (!supabaseUrl && process.env.DATABASE_URL) {
+  const match = process.env.DATABASE_URL.match(/postgres\.([a-z0-9]+):/i);
+  if (match && match[1]) {
+    supabaseUrl = `https://${match[1]}.supabase.co`;
+  }
+}
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
 
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseKey);
@@ -16,9 +22,12 @@ export const supabase = isSupabaseConfigured
   : null;
 
 if (isSupabaseConfigured) {
-  console.log('✅ [Database] Supabase client successfully initialized with provided credentials.');
+  console.log(`✅ [Database] Supabase client successfully initialized (${supabaseUrl}).`);
 } else {
   console.log('ℹ️  [Database] Supabase credentials not provided in .env (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY). Running with persistent in-memory database adapter.');
+  if (supabaseUrl && !supabaseKey) {
+    console.warn(`⚠️  [Database] Supabase project detected (${supabaseUrl}), but SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY is missing in backend/.env.`);
+  }
 }
 
 import { db as memoryDb } from './database.js';
@@ -241,6 +250,64 @@ export const dbService = {
 
     memoryDb.users.push(record);
     return record;
+  },
+
+  async updateUser(id, updates) {
+    if (isSupabaseConfigured && supabase) {
+      const payload = { updated_at: new Date().toISOString() };
+      if (updates.name) payload.name = updates.name.trim();
+      if (updates.email) payload.email = updates.email.trim().toLowerCase();
+      if (updates.passwordHash) payload.password_hash = updates.passwordHash;
+      if (updates.status) payload.status = updates.status;
+      if (updates.role) payload.role = updates.role;
+
+      const { data, error } = await supabase
+        .from('users')
+        .update(payload)
+        .eq('id', id)
+        .select()
+        .single();
+      if (error) throw new Error(error.message);
+      return data;
+    }
+
+    const u = memoryDb.users.find(user => user.id === id);
+    if (!u) return null;
+    if (updates.name) u.name = updates.name.trim();
+    if (updates.email) u.email = updates.email.trim().toLowerCase();
+    if (updates.passwordHash) u.passwordHash = updates.passwordHash;
+    if (updates.status) u.status = updates.status;
+    return u;
+  },
+
+  async deleteUser(id) {
+    if (isSupabaseConfigured && supabase) {
+      const { error } = await supabase.from('users').delete().eq('id', id);
+      if (error) throw new Error(error.message);
+      return true;
+    }
+    const idx = memoryDb.users.findIndex(u => u.id === id);
+    if (idx !== -1) {
+      memoryDb.users.splice(idx, 1);
+      return true;
+    }
+    return false;
+  },
+
+  async deleteJudgeAssignment(judgeId, categoryId = null) {
+    if (isSupabaseConfigured && supabase) {
+      let query = supabase.from('judge_assignments').delete().eq('judge_id', judgeId);
+      if (categoryId) query = query.eq('category_id', categoryId);
+      const { error } = await query;
+      if (error) throw new Error(error.message);
+      return true;
+    }
+    if (memoryDb.judgeAssignments) {
+      memoryDb.judgeAssignments = memoryDb.judgeAssignments.filter(
+        ja => ja.judgeId !== judgeId || (categoryId && ja.categoryId !== categoryId)
+      );
+    }
+    return true;
   },
 
   // --- EVENTS ---

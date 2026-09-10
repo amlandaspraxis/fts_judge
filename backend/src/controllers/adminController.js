@@ -1,4 +1,5 @@
 import { db } from '../config/database.js';
+import dbService from '../config/dbService.js';
 import { sendSuccess, sendError } from '../utils/response.js';
 import { logAudit, getAuditLogs } from '../services/auditService.js';
 import { liveEventService } from '../services/liveEventService.js';
@@ -47,68 +48,73 @@ export const getDashboard = async (req, res) => {
   });
 };
 
-export const getCategories = (req, res) => {
-  return sendSuccess(res, { categories: db.categories });
+export const getCategories = async (req, res) => {
+  try {
+    const categories = await dbService.getCategories();
+    return sendSuccess(res, { categories });
+  } catch {
+    return sendSuccess(res, { categories: db.categories });
+  }
 };
 
-export const createCategory = (req, res) => {
+export const createCategory = async (req, res) => {
   const { name, code, prefix, description } = req.body;
   if (!name) return sendError(res, 'Category name is required', 400);
 
   const catCode = (code || prefix || name.substring(0, 3)).toUpperCase().trim();
 
-  const category = {
-    id: `cat_${Date.now()}`,
-    eventId: db.events[0].id,
-    name: name.trim(),
-    code: catCode,
-    prefix: catCode,
-    description: description || '',
-    status: 'ACTIVE',
-    createdAt: new Date().toISOString()
-  };
+  try {
+    const category = await dbService.createCategory({
+      eventId: db.events?.[0]?.id || 'evt_fts_2026',
+      name: name.trim(),
+      code: catCode,
+      prefix: catCode,
+      description: description || '',
+      status: 'ACTIVE'
+    });
 
-  db.categories.push(category);
-  // Authoritative real-time sync with Live Projector & multi-portals
-  liveEventService.syncCategory(category, 'ADD');
+    if (!db.categories.some(c => c.id === category.id)) {
+      db.categories.push(category);
+    }
 
-  logAudit(req.user.id, 'ADMIN_CREATED_CATEGORY', 'Category', category.id, null, category, req);
-  return sendSuccess(res, { category }, 'Category created', 201);
-};
-
-export const updateCategory = (req, res) => {
-  const { id } = req.params;
-  const cat = db.categories.find(c => c.id === id);
-  if (!cat) return sendError(res, 'Category not found', 404);
-
-  const old = { ...cat };
-  if (req.body.name) cat.name = req.body.name;
-  if (req.body.code || req.body.prefix) {
-    const newCode = (req.body.code || req.body.prefix).toUpperCase().trim();
-    cat.code = newCode;
-    cat.prefix = newCode;
+    liveEventService.syncCategory(category, 'ADD');
+    logAudit(req.user.id, 'ADMIN_CREATED_CATEGORY', 'Category', category.id, null, category, req);
+    return sendSuccess(res, { category }, 'Category created', 201);
+  } catch (err) {
+    return sendError(res, err.message, 500);
   }
-  if (req.body.description !== undefined) cat.description = req.body.description;
-  if (req.body.status) cat.status = req.body.status;
-
-  // Propagate update to Live Projector & Real-time State
-  liveEventService.syncCategory(cat, 'UPDATE');
-
-  logAudit(req.user.id, 'ADMIN_UPDATED_CATEGORY', 'Category', cat.id, old, cat, req);
-  return sendSuccess(res, { category: cat }, 'Category updated');
 };
 
-export const deleteCategory = (req, res) => {
+export const updateCategory = async (req, res) => {
   const { id } = req.params;
-  const index = db.categories.findIndex(c => c.id === id);
-  if (index === -1) return sendError(res, 'Category not found', 404);
+  try {
+    const cat = await dbService.updateCategory(id, req.body);
+    if (!cat) return sendError(res, 'Category not found', 404);
 
-  const deleted = db.categories.splice(index, 1)[0];
-  // Propagate deletion to Live Projector & Real-time State
-  liveEventService.syncCategory({ id }, 'REMOVE');
+    const memCat = db.categories.find(c => c.id === id);
+    if (memCat) Object.assign(memCat, cat);
 
-  logAudit(req.user.id, 'ADMIN_DELETED_CATEGORY', 'Category', id, deleted, null, req);
-  return sendSuccess(res, {}, 'Category deleted');
+    liveEventService.syncCategory(cat, 'UPDATE');
+    logAudit(req.user.id, 'ADMIN_UPDATED_CATEGORY', 'Category', cat.id, null, cat, req);
+    return sendSuccess(res, { category: cat }, 'Category updated');
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+};
+
+export const deleteCategory = async (req, res) => {
+  const { id } = req.params;
+  try {
+    await dbService.deleteCategory(id);
+    const index = db.categories.findIndex(c => c.id === id);
+    if (index !== -1) db.categories.splice(index, 1);
+
+    liveEventService.syncCategory({ id }, 'REMOVE');
+    logAudit(req.user.id, 'ADMIN_DELETED_CATEGORY', 'Category', id, null, null, req);
+    return sendSuccess(res, {}, 'Category deleted');
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
 };
 
 export const getJudges = (req, res) => {
@@ -143,178 +149,174 @@ export const createJudge = async (req, res) => {
   const { name, email, password, assignedCategories, photo, title, code } = req.body;
   if (!name || !email) return sendError(res, 'Name and email are required', 400);
 
-  const existing = db.users.find(u => u.email.toLowerCase() === email.trim().toLowerCase());
+  const existing = await dbService.findUserByEmail(email);
   if (existing) return sendError(res, 'Email already in use', 409);
 
   const salt = await bcrypt.genSalt(10);
   const passwordHash = await bcrypt.hash(password || 'judge123', salt);
 
-  const judgeIndex = db.users.filter(u => u.role === 'JUDGE').length;
-  const accessCode = (code || String(4821 + judgeIndex)).trim().toUpperCase();
+  const judgesList = await dbService.getUsers('JUDGE');
+  const accessCode = (code || String(4821 + judgesList.length)).trim().toUpperCase();
 
-  const judge = {
-    id: `usr_${Date.now()}`,
-    name: name.trim(),
-    email: email.trim().toLowerCase(),
-    code: accessCode,
-    accessCode: accessCode,
-    photo: photo || null,
-    title: title || 'Official Judge & Evaluator',
-    passwordHash,
-    role: 'JUDGE',
-    status: 'ACTIVE',
-    createdAt: new Date().toISOString()
-  };
-
-  db.users.push(judge);
-
-  if (Array.isArray(assignedCategories)) {
-    assignedCategories.forEach(catId => {
-      db.judgeAssignments.push({
-        id: `ja_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-        judgeId: judge.id,
-        categoryId: catId,
-        eventId: db.events?.[0]?.id || 'evt_fts_2026',
-        createdAt: new Date().toISOString()
-      });
+  try {
+    const judge = await dbService.createUser({
+      name: name.trim(),
+      email: email.trim().toLowerCase(),
+      passwordHash,
+      role: 'JUDGE',
+      status: 'ACTIVE'
     });
+    judge.code = accessCode;
+    judge.accessCode = accessCode;
+    judge.photo = photo || null;
+    judge.title = title || 'Official Judge & Evaluator';
+
+    if (!db.users.some(u => u.id === judge.id)) {
+      db.users.push(judge);
+    }
+
+    if (Array.isArray(assignedCategories)) {
+      for (const catId of assignedCategories) {
+        await dbService.createJudgeAssignment({
+          judgeId: judge.id,
+          categoryId: catId,
+          eventId: db.events?.[0]?.id || 'evt_fts_2026'
+        });
+      }
+    }
+
+    liveEventService.syncJudge({
+      id: judge.id,
+      name: judge.name,
+      email: judge.email,
+      code: accessCode,
+      accessCode: accessCode,
+      photo: judge.photo,
+      title: judge.title,
+      assignedCategories: Array.isArray(assignedCategories) ? assignedCategories : [],
+      status: judge.status
+    }, 'ADD');
+
+    logAudit(req.user.id, 'ADMIN_CREATED_JUDGE', 'User', judge.id, null, { name: judge.name, email: judge.email, code: accessCode }, req);
+    return sendSuccess(res, { judge: { id: judge.id, name: judge.name, email: judge.email, code: accessCode } }, 'Judge account created', 201);
+  } catch (err) {
+    return sendError(res, err.message, 500);
   }
-
-  // Authoritative real-time sync with Live Projector & multi-portals
-  liveEventService.syncJudge({
-    id: judge.id,
-    name: judge.name,
-    email: judge.email,
-    code: accessCode,
-    accessCode: accessCode,
-    photo: judge.photo,
-    title: judge.title,
-    assignedCategories: Array.isArray(assignedCategories) ? assignedCategories : [],
-    status: judge.status
-  }, 'ADD');
-
-  logAudit(req.user.id, 'ADMIN_CREATED_JUDGE', 'User', judge.id, null, { name: judge.name, email: judge.email, code: accessCode }, req);
-  return sendSuccess(res, { judge: { id: judge.id, name: judge.name, email: judge.email, code: accessCode } }, 'Judge account created', 201);
 };
 
 export const updateJudge = async (req, res) => {
   const { id } = req.params;
   const { name, email, password, status, assignedCategories, photo, title, code } = req.body;
 
-  const judge = db.users.find(u => u.id === id && u.role === 'JUDGE');
-  if (!judge) return sendError(res, 'Judge not found', 404);
+  try {
+    const judge = await dbService.findUserById(id);
+    if (!judge) return sendError(res, 'Judge not found', 404);
 
-  const old = { ...judge };
+    const old = { ...judge };
+    const updates = {};
 
-  if (email && email.trim().toLowerCase() !== judge.email.toLowerCase()) {
-    const duplicate = db.users.find(u => u.email.toLowerCase() === email.trim().toLowerCase() && u.id !== id);
-    if (duplicate) return sendError(res, 'Email already in use by another account', 409);
-    judge.email = email.trim().toLowerCase();
+    if (email && email.trim().toLowerCase() !== judge.email.toLowerCase()) {
+      const duplicate = await dbService.findUserByEmail(email);
+      if (duplicate && duplicate.id !== id) return sendError(res, 'Email already in use by another account', 409);
+      updates.email = email.trim().toLowerCase();
+    }
+
+    if (name && name.trim()) updates.name = name.trim();
+    if (status) updates.status = status;
+    if (password && password.trim()) {
+      const salt = await bcrypt.genSalt(10);
+      updates.passwordHash = await bcrypt.hash(password.trim(), salt);
+    }
+
+    await dbService.updateUser(id, updates);
+
+    const memJudge = db.users.find(u => u.id === id);
+    if (memJudge) {
+      Object.assign(memJudge, updates);
+      if (code) {
+        memJudge.code = code.trim().toUpperCase();
+        memJudge.accessCode = memJudge.code;
+      }
+      if (photo !== undefined) memJudge.photo = photo;
+      if (title !== undefined) memJudge.title = title;
+      memJudge.updatedAt = new Date().toISOString();
+    }
+
+    if (Array.isArray(assignedCategories)) {
+      await dbService.deleteJudgeAssignment(id);
+      for (const catId of assignedCategories) {
+        await dbService.createJudgeAssignment({
+          judgeId: id,
+          categoryId: catId,
+          eventId: db.events?.[0]?.id || 'evt_fts_2026'
+        });
+      }
+    }
+
+    liveEventService.syncJudge({
+      id,
+      name: updates.name || judge.name,
+      email: updates.email || judge.email,
+      code: code || judge.code,
+      accessCode: code || judge.code,
+      photo: photo !== undefined ? photo : judge.photo,
+      title: title !== undefined ? title : judge.title,
+      status: updates.status || judge.status,
+      assignedCategories: Array.isArray(assignedCategories) ? assignedCategories : undefined
+    }, 'UPDATE');
+
+    logAudit(req.user.id, 'ADMIN_UPDATED_JUDGE', 'User', id, old, updates, req);
+    return sendSuccess(res, { judge: { id, name: updates.name || judge.name, email: updates.email || judge.email, status: updates.status || judge.status } }, 'Judge updated successfully');
+  } catch (err) {
+    return sendError(res, err.message, 500);
   }
-
-  if (name && name.trim()) {
-    judge.name = name.trim();
-  }
-
-  if (status) {
-    judge.status = status;
-  }
-
-  if (photo !== undefined) {
-    judge.photo = photo;
-  }
-
-  if (title !== undefined) {
-    judge.title = title;
-  }
-
-  if (code) {
-    judge.code = code.trim().toUpperCase();
-    judge.accessCode = judge.code;
-  }
-
-  if (password && password.trim()) {
-    const salt = await bcrypt.genSalt(10);
-    judge.passwordHash = await bcrypt.hash(password.trim(), salt);
-  }
-
-  judge.updatedAt = new Date().toISOString();
-
-  // Update category assignments if provided
-  if (Array.isArray(assignedCategories)) {
-    db.judgeAssignments = (db.judgeAssignments || []).filter(ja => ja.judgeId !== id);
-    assignedCategories.forEach(catId => {
-      db.judgeAssignments.push({
-        id: `ja_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-        judgeId: id,
-        categoryId: catId,
-        eventId: db.events?.[0]?.id || 'evt_fts_2026',
-        createdAt: new Date().toISOString()
-      });
-    });
-  }
-
-  // Propagate update to Live Projector & Real-time State
-  liveEventService.syncJudge({
-    id: judge.id,
-    name: judge.name,
-    email: judge.email,
-    code: judge.code,
-    accessCode: judge.accessCode,
-    photo: judge.photo,
-    title: judge.title,
-    status: judge.status,
-    assignedCategories: Array.isArray(assignedCategories) ? assignedCategories : undefined
-  }, 'UPDATE');
-
-  logAudit(req.user.id, 'ADMIN_UPDATED_JUDGE', 'User', judge.id, old, { name: judge.name, email: judge.email, status: judge.status }, req);
-  return sendSuccess(res, { judge: { id: judge.id, name: judge.name, email: judge.email, status: judge.status } }, 'Judge updated successfully');
 };
 
-export const deleteJudge = (req, res) => {
+export const deleteJudge = async (req, res) => {
   const { id } = req.params;
-  const userIdx = db.users.findIndex(u => u.id === id && u.role === 'JUDGE');
-  if (userIdx === -1) return sendError(res, 'Judge not found', 404);
+  try {
+    await dbService.deleteUser(id);
+    await dbService.deleteJudgeAssignment(id);
 
-  const deletedUser = db.users.splice(userIdx, 1)[0];
+    const userIdx = db.users.findIndex(u => u.id === id && u.role === 'JUDGE');
+    if (userIdx !== -1) db.users.splice(userIdx, 1);
+    if (db.judgeAssignments) {
+      db.judgeAssignments = db.judgeAssignments.filter(ja => ja.judgeId !== id);
+    }
 
-  // Clean up any judge assignments
-  if (db.judgeAssignments) {
-    db.judgeAssignments = db.judgeAssignments.filter(ja => ja.judgeId !== id);
+    liveEventService.syncJudge({ id }, 'REMOVE');
+    logAudit(req.user.id, 'ADMIN_DELETED_JUDGE', 'User', id, null, null, req);
+    return sendSuccess(res, { id }, 'Judge deleted successfully');
+  } catch (err) {
+    return sendError(res, err.message, 500);
   }
-
-  // Propagate deletion to Live Projector & Real-time State
-  liveEventService.syncJudge({ id }, 'REMOVE');
-
-  logAudit(req.user.id, 'ADMIN_DELETED_JUDGE', 'User', id, deletedUser, null, req);
-  return sendSuccess(res, { id }, 'Judge deleted successfully');
 };
 
-export const assignJudge = (req, res) => {
+export const assignJudge = async (req, res) => {
   const { judgeId, categoryId } = req.body;
   if (!judgeId || !categoryId) return sendError(res, 'judgeId and categoryId are required', 400);
 
-  const existing = db.judgeAssignments.find(ja => ja.judgeId === judgeId && ja.categoryId === categoryId);
-  if (existing) return sendError(res, 'Judge is already assigned to this category', 409);
+  try {
+    const assignment = await dbService.createJudgeAssignment({
+      judgeId,
+      categoryId,
+      eventId: db.events?.[0]?.id || 'evt_fts_2026'
+    });
 
-  const assignment = {
-    id: `ja_${Date.now()}`,
-    judgeId,
-    categoryId,
-    eventId: db.events[0].id,
-    createdAt: new Date().toISOString()
-  };
+    if (!db.judgeAssignments.some(ja => ja.id === assignment.id)) {
+      db.judgeAssignments.push(assignment);
+    }
 
-  db.judgeAssignments.push(assignment);
+    const allAssigned = (await dbService.getJudgeAssignments())
+      .filter(ja => ja.judgeId === judgeId)
+      .map(ja => ja.categoryId);
+    liveEventService.syncJudge({ id: judgeId, assignedCategories: allAssigned }, 'UPDATE');
 
-  // Authoritative sync to Live Event Service so judge assigned categories update live
-  const allAssigned = db.judgeAssignments
-    .filter(ja => ja.judgeId === judgeId)
-    .map(ja => ja.categoryId);
-  liveEventService.syncJudge({ id: judgeId, assignedCategories: allAssigned }, 'UPDATE');
-
-  logAudit(req.user.id, 'ADMIN_ASSIGNED_JUDGE', 'JudgeAssignment', assignment.id, null, assignment, req);
-  return sendSuccess(res, { assignment }, 'Judge assigned to category', 201);
+    logAudit(req.user.id, 'ADMIN_ASSIGNED_JUDGE', 'JudgeAssignment', assignment.id, null, assignment, req);
+    return sendSuccess(res, { assignment }, 'Judge assigned to category', 201);
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
 };
 
 export const getAudienceUsers = (req, res) => {
@@ -358,7 +360,7 @@ export const getAudienceUsers = (req, res) => {
   return sendSuccess(res, { audience, count: audience.length });
 };
 
-export const updateEventState = (req, res) => {
+export const updateEventState = async (req, res) => {
   const { status } = req.body;
   const validStatuses = [
     'SETUP', 'JUDGING_OPEN', 'VOTING_OPEN', 'JUDGING_CLOSED',
@@ -393,7 +395,10 @@ export const updateEventState = (req, res) => {
     } catch {}
   }
 
-  // Authoritative real-time sync with Live Event Service
+  // Authoritative real-time sync with Live Event Service and Supabase
+  try {
+    await dbService.updateEventState(status);
+  } catch {}
   try {
     liveEventService.dispatch('SET_EVENT_STATUS', { status });
   } catch {}

@@ -196,7 +196,7 @@ export default function PortalAccessHub() {
       accessBadge: 'Management Only',
       accessColor: '#EF4136',
       recommendedFor: 'Core Event Organizers, Chief Stage Directors',
-      authInfo: 'Pre-issued credentials: ID `admin@admin.com` (or `admin`) | Password: `ftsadmin2026` at /login/admin'
+      authInfo: 'Sign in with Management credentials at /login/admin.'
     },
     {
       id: 'admin-master-projector',

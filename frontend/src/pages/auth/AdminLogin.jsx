@@ -48,12 +48,6 @@ export default function AdminLogin() {
     }
   };
 
-  const fillDefaultCredentials = () => {
-    setLoginId('admin@admin.com');
-    setPassword('ftsadmin2026');
-    setError('');
-  };
-
   return (
     <div style={{
       minHeight: '100vh',
@@ -235,35 +229,6 @@ export default function AdminLogin() {
               Multiple laptops, tablets, and phones can operate the management console concurrently with real-time state synchronization.
             </div>
           </div>
-        </div>
-
-        {/* Quick Fill Demo Helper */}
-        <div style={{
-          marginTop: 14,
-          paddingTop: 12,
-          borderTop: '1px solid #E2E8F0',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center'
-        }}>
-          <span style={{ fontSize: 11, color: '#64748B' }}>
-            Pre-issued: <code>admin@admin.com</code>
-          </span>
-          <button
-            type="button"
-            onClick={fillDefaultCredentials}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: '#29ABE2',
-              fontSize: 11.5,
-              fontWeight: 700,
-              cursor: 'pointer',
-              textDecoration: 'underline'
-            }}
-          >
-            Fill Default ID & Password
-          </button>
         </div>
       </div>
 
