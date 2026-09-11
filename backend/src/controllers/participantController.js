@@ -165,3 +165,18 @@ export const searchParticipants = async (req, res) => {
     return sendError(res, error.message, 500);
   }
 };
+
+export const deleteParticipant = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const part = await dbService.getParticipantById(id);
+    if (!part) return sendError(res, 'Participant not found', 404);
+
+    await dbService.deleteParticipant(id);
+    await logAudit(req.user.id, 'DELETED_PARTICIPANT', 'Participant', id, part, null, req);
+    return sendSuccess(res, { id }, 'Participant deleted successfully');
+  } catch (error) {
+    return sendError(res, error.message, 500);
+  }
+};
+

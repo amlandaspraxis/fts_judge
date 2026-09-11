@@ -1,4 +1,5 @@
 import { memoryStore } from '../config/db.js';
+import dbService from '../config/dbService.js';
 
 export const getJudges = (req, res) => {
   const safeJudges = memoryStore.judges.map(({ id, name }) => ({ id, name }));
@@ -38,6 +39,19 @@ export const submitJudgeScores = (req, res) => {
   }
 
   memoryStore.judgeScores[participantId][judgeId] = marks;
+
+  const totalNum = typeof marks === 'number'
+    ? marks
+    : (marks && typeof marks === 'object' ? Object.values(marks).reduce((a, b) => (Number(a) || 0) + (Number(b) || 0), 0) : 0);
+  const part = memoryStore.participants?.find(p => p.id === participantId);
+
+  // Persist to Supabase
+  dbService.createJudgeScore({
+    judgeId,
+    participantId,
+    categoryId: part?.categoryId || 'cat_dancing_superstar',
+    score: totalNum
+  }).catch(e => console.warn('[JudgesController] Supabase score save notice:', e.message));
 
   res.json({
     success: true,

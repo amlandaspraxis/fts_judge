@@ -22,7 +22,7 @@ const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABAS
 
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseKey);
 
-export let supabaseTablesReady = false;
+export let supabaseTablesReady = isSupabaseConfigured;
 export const useSupabase = () => isSupabaseConfigured && Boolean(supabase) && supabaseTablesReady;
 
 export const supabase = isSupabaseConfigured
@@ -107,20 +107,41 @@ async function initSupabaseSeed() {
         await supabase.from('participants').upsert(
           memoryDb.participants.map(p => ({
             id: p.id,
-            event_id: p.eventId,
+            event_id: p.eventId || 'evt_fts_2026',
             category_id: p.categoryId,
-            participant_code: p.participantCode,
-            registration_number: p.registrationNumber,
+            participant_code: p.participantCode || p.code,
+            registration_number: p.registrationNumber || p.regNo || p.id,
             name: p.name,
-            phone_number: p.phoneNumber,
-            routine_title: p.routineTitle,
-            act: p.act,
+            phone_number: p.phoneNumber || p.phone || '0000000000',
+            routine_title: p.routineTitle || p.act || 'Performance',
+            act: p.act || p.routineTitle || 'Performance',
             status: p.status || 'ACTIVE'
           }))
         );
       }
 
       console.log('✅ [Database] Supabase initial seed completed successfully.');
+    } else {
+      // Ensure participants (like p1) are synced if users existed but participants table is missing rows
+      const { data: existingParts } = await supabase.from('participants').select('id').limit(1);
+      if (!existingParts || existingParts.length === 0) {
+        if (memoryDb.participants && memoryDb.participants.length > 0) {
+          await supabase.from('participants').upsert(
+            memoryDb.participants.map(p => ({
+              id: p.id,
+              event_id: p.eventId || 'evt_fts_2026',
+              category_id: p.categoryId,
+              participant_code: p.participantCode || p.code,
+              registration_number: p.registrationNumber || p.regNo || p.id,
+              name: p.name,
+              phone_number: p.phoneNumber || p.phone || '0000000000',
+              routine_title: p.routineTitle || p.act || 'Performance',
+              act: p.act || p.routineTitle || 'Performance',
+              status: p.status || 'ACTIVE'
+            }))
+          );
+        }
+      }
     }
   } catch (err) {
     console.warn('⚠️ [Database] Seed check notice:', err.message);
@@ -710,6 +731,22 @@ export const dbService = {
     return part;
   },
 
+  async deleteParticipant(id) {
+    if (useSupabase()) {
+      const { error } = await supabase.from('participants').delete().eq('id', id);
+      if (error) throw new Error(error.message);
+      const memIdx = memoryDb.participants.findIndex(p => p.id === id);
+      if (memIdx !== -1) memoryDb.participants.splice(memIdx, 1);
+      return true;
+    }
+    const idx = memoryDb.participants.findIndex(p => p.id === id);
+    if (idx !== -1) {
+      memoryDb.participants.splice(idx, 1);
+      return true;
+    }
+    return false;
+  },
+
   // --- JUDGE ASSIGNMENTS ---
   async getJudgeAssignments() {
     if (useSupabase()) {
@@ -812,7 +849,7 @@ export const dbService = {
     };
 
     if (useSupabase()) {
-      const { error } = await supabase.from('judge_scores').insert({
+      const { error } = await supabase.from('judge_scores').upsert({
         id: scoreRecord.id,
         judge_id: scoreRecord.judgeId,
         participant_id: scoreRecord.participantId,
@@ -820,7 +857,7 @@ export const dbService = {
         score: scoreRecord.score,
         revision_count: 0,
         locked: false
-      });
+      }, { onConflict: 'judge_id,participant_id' });
       if (error) throw new Error(error.message);
       return scoreRecord;
     }
@@ -1087,6 +1124,58 @@ export const dbService = {
     };
 
     if (useSupabase()) {
+      // Ensure the voter user exists in `users` table to satisfy foreign key constraint
+      try {
+        const { data: userExists } = await supabase
+          .from('users')
+          .select('id')
+          .eq('id', vote.audienceId)
+          .maybeSingle();
+
+        if (!userExists) {
+          const userEmail = voteData.email || (vote.regNo ? `${vote.regNo.toLowerCase()}@student.local` : `${vote.audienceId}@student.local`);
+          await supabase.from('users').upsert({
+            id: vote.audienceId,
+            name: vote.regNo ? `Student (${vote.regNo})` : `Student (${vote.audienceId})`,
+            email: userEmail,
+            password_hash: '$2a$10$tQ120eR94uO.c2V2dFvQReI7mDqXz3J7w4U4k1IeX/0CgC1E4u1e2',
+            role: 'AUDIENCE',
+            status: 'ACTIVE'
+          });
+        }
+      } catch (uErr) {
+        console.warn('⚠️ [Database] Notice verifying audience user:', uErr.message);
+      }
+
+      // Ensure participant exists in `participants` table
+      try {
+        const { data: partExists } = await supabase
+          .from('participants')
+          .select('id')
+          .eq('id', vote.participantId)
+          .maybeSingle();
+
+        if (!partExists) {
+          const localPart = memoryDb.participants?.find(p => p.id === vote.participantId);
+          if (localPart) {
+            await supabase.from('participants').upsert({
+              id: localPart.id,
+              event_id: localPart.eventId || vote.eventId,
+              category_id: localPart.categoryId || vote.categoryId,
+              participant_code: localPart.participantCode || localPart.code || 'PERF',
+              registration_number: localPart.registrationNumber || localPart.regNo || 'REG',
+              name: localPart.name || 'Performer',
+              phone_number: localPart.phoneNumber || localPart.phone || '0000000000',
+              routine_title: localPart.routineTitle || localPart.act || 'Performance',
+              act: localPart.act || localPart.routineTitle || 'Performance',
+              status: localPart.status || 'ACTIVE'
+            });
+          }
+        }
+      } catch (pErr) {
+        console.warn('⚠️ [Database] Notice verifying participant:', pErr.message);
+      }
+
       const { error } = await supabase.from('audience_votes').insert({
         id: vote.id,
         audience_id: vote.audienceId,

@@ -1,4 +1,5 @@
 import { memoryStore } from '../config/db.js';
+import dbService from '../config/dbService.js';
 
 export const getEventStatus = (req, res) => {
   try {
@@ -27,7 +28,11 @@ export const verifyPin = (req, res) => {
 export const updateEventControls = (req, res) => {
   const { currentParticipantId, votingOpen, revealAudience, revealJudges, revealFinal } = req.body;
   if (currentParticipantId !== undefined) memoryStore.event.currentParticipantId = currentParticipantId;
-  if (votingOpen !== undefined) memoryStore.event.votingOpen = Boolean(votingOpen);
+  if (votingOpen !== undefined) {
+    memoryStore.event.votingOpen = Boolean(votingOpen);
+    const status = votingOpen ? 'VOTING_OPEN' : 'JUDGING_OPEN';
+    dbService.updateEventState(status).catch(e => console.warn('[EventsController] Supabase event state sync notice:', e.message));
+  }
   if (revealAudience !== undefined) memoryStore.event.revealAudience = Boolean(revealAudience);
   if (revealJudges !== undefined) memoryStore.event.revealJudges = Boolean(revealJudges);
   if (revealFinal !== undefined) memoryStore.event.revealFinal = Boolean(revealFinal);

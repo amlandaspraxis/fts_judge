@@ -40,8 +40,17 @@ router.get('/stream', (req, res) => {
   liveEventService.addClient(res);
 });
 
-// Dispatch Authoritative Action (Strictly Admin-Only)
-router.post('/action', authMiddleware, requireRole('ADMIN'), (req, res) => {
+// Dispatch Authoritative Action (Allows audience voting and judge scoring while enforcing ADMIN for control)
+router.post('/action', (req, res, next) => {
+  const { action } = req.body || {};
+  const openActions = ['CAST_AUDIENCE_VOTE', 'SUBMIT_JUDGE_SCORE', 'CLAIM_REGISTRATION', 'GENERATE_REGISTRATION_CODE'];
+  if (openActions.includes(action)) {
+    return next();
+  }
+  return authMiddleware(req, res, () => {
+    requireRole('ADMIN')(req, res, next);
+  });
+}, (req, res) => {
   const { action, payload } = req.body;
   if (!action) {
     return res.status(400).json({ success: false, message: 'Action type is required' });

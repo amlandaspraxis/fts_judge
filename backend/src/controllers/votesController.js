@@ -1,4 +1,5 @@
 import { memoryStore } from '../config/db.js';
+import dbService from '../config/dbService.js';
 import { otpService } from '../services/otpService.js';
 
 export const sendOtp = (req, res) => {
@@ -112,6 +113,16 @@ export const castVote = async (req, res) => {
   if (req.user?.id) partRecord.users.add(req.user.id);
   if (clientIp) partRecord.ips.add(clientIp);
   if (deviceId) partRecord.devices.add(deviceId);
+
+  // Persist to Supabase
+  dbService.createAudienceVote({
+    audienceId: req.user?.id || `usr_${studentId}`,
+    participantId,
+    categoryId,
+    ipAddress: clientIp,
+    deviceFingerprint: deviceId,
+    regNo: studentId
+  }).catch(e => console.warn('[VotesController] Supabase vote save notice:', e.message));
 
   const allScores = Object.values(memoryStore.audienceVotes[participantId]);
   const avg = allScores.reduce((a, b) => a + b, 0) / allScores.length;

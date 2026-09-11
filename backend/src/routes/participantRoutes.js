@@ -3,6 +3,7 @@ import {
   getParticipants,
   registerParticipant,
   updateParticipant,
+  deleteParticipant,
   searchParticipants
 } from '../controllers/participantController.js';
 import { authMiddleware } from '../middleware/authMiddleware.js';
@@ -30,5 +31,6 @@ router.get('/', getParticipants);
 router.get('/search', searchParticipants);
 router.post('/register', validate(validateParticipantRegistration), registerParticipant);
 router.put('/:id', updateParticipant);
+router.delete('/:id', deleteParticipant);
 
 export default router;

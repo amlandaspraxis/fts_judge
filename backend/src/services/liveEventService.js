@@ -1,5 +1,6 @@
 import { memoryStore, INITIAL_JUDGES, INITIAL_PARTICIPANTS } from '../config/db.js';
 import { db } from '../config/database.js';
+import dbService from '../config/dbService.js';
 
 /**
  * Authoritative Live Event Service
@@ -368,6 +369,17 @@ class LiveEventService {
         };
         db.users.push(newUser);
         this.broadcast('AUDIENCE_UPDATE', { audience: newUser });
+
+        // Asynchronously persist audience user to Supabase
+        dbService.createUser({
+          id: newUser.id,
+          name: newUser.name,
+          email: newUser.email,
+          passwordHash: '$2a$10$tQ120eR94uO.c2V2dFvQReI7mDqXz3J7w4U4k1IeX/0CgC1E4u1e2',
+          role: 'AUDIENCE',
+          status: 'ACTIVE'
+        }).catch(e => console.warn('[LiveEvent] Audience user Supabase sync notice:', e.message));
+
         return newUser;
       } else {
         if (cleanPhone && !existing.phone) existing.phone = cleanPhone;
@@ -651,6 +663,7 @@ class LiveEventService {
           if (status === 'RESULTS_PUBLISHED') {
             this.state.leaderboardRevealed = true;
           }
+          dbService.updateEventState(status).catch(e => console.warn('[LiveEvent] Event status Supabase sync error:', e.message));
         }
         break;
       }
@@ -729,6 +742,7 @@ class LiveEventService {
           db.events[0].judge_weight = judge;
           db.events[0].audience_weight = 100 - judge;
         }
+        dbService.updateEventState(this.state.event.status || 'SETUP', { judgeWeight: judge, audienceWeight: 100 - judge }).catch(e => console.warn('[LiveEvent] Weights Supabase sync error:', e.message));
         break;
       }
 
@@ -818,6 +832,20 @@ class LiveEventService {
             });
           }
         }
+
+        // Persist to Supabase
+        dbService.createParticipant({
+          id: newP.id,
+          eventId: db.events?.[0]?.id || 'evt_fts_2026',
+          categoryId: newP.categoryId,
+          participantCode: code,
+          registrationNumber: newP.regNo,
+          name: newP.name,
+          phoneNumber: newP.phone,
+          routineTitle: newP.act,
+          act: newP.act,
+          status: 'ACTIVE'
+        }).catch(e => console.warn('[LiveEvent] Create participant Supabase sync error:', e.message));
         break;
       }
 
@@ -831,6 +859,7 @@ class LiveEventService {
           const dbPart = db.participants.find(p => p.id === id);
           if (dbPart) Object.assign(dbPart, fields);
         }
+        dbService.updateParticipant(id, fields).catch(e => console.warn('[LiveEvent] Update participant Supabase sync error:', e.message));
         break;
       }
 
@@ -843,6 +872,7 @@ class LiveEventService {
         if (this.state.currentId === id) {
           this.state.currentId = this.state.participants[0]?.id || null;
         }
+        dbService.deleteParticipant(id).catch(e => console.warn('[LiveEvent] Delete participant Supabase sync error:', e.message));
         break;
       }
 
@@ -889,6 +919,16 @@ class LiveEventService {
             });
           }
         }
+
+        // Persist to Supabase
+        dbService.createUser({
+          id: newJ.id,
+          name: newJ.name,
+          email: newJ.email || `${newJ.name.toLowerCase().replace(/\s+/g, '')}@event.local`,
+          passwordHash: '$2a$10$tQ120eR94uO.c2V2dFvQReI7mDqXz3J7w4U4k1IeX/0CgC1E4u1e2',
+          role: 'JUDGE',
+          status: 'ACTIVE'
+        }).catch(e => console.warn('[LiveEvent] Create judge Supabase sync error:', e.message));
         break;
       }
 
@@ -902,6 +942,7 @@ class LiveEventService {
           const dbUser = db.users.find(u => u.id === id && u.role === 'JUDGE');
           if (dbUser) Object.assign(dbUser, fields);
         }
+        dbService.updateUser(id, fields).catch(e => console.warn('[LiveEvent] Update judge Supabase sync error:', e.message));
         break;
       }
 
@@ -912,6 +953,7 @@ class LiveEventService {
         if (db.users) {
           db.users = db.users.filter(u => u.id !== id);
         }
+        dbService.deleteUser(id).catch(e => console.warn('[LiveEvent] Delete judge Supabase sync error:', e.message));
         break;
       }
 
@@ -1026,23 +1068,25 @@ class LiveEventService {
         }
         memoryStore.judgeScores[participantId][judgeId] = judgeMarks;
 
+        const totalNum = typeof judgeMarks === 'number'
+          ? judgeMarks
+          : Object.values(judgeMarks).reduce((a, b) => (Number(a) || 0) + (Number(b) || 0), 0);
+        const part = db.participants?.find(p => p.id === participantId) || this.state.participants.find(p => p.id === participantId);
+        const catId = part?.categoryId || this.state.categoryFilter || 'cat_dancing_superstar';
+
         // Sync to db.judgeScores
         if (db.judgeScores) {
-          const totalNum = typeof judgeMarks === 'number'
-            ? judgeMarks
-            : Object.values(judgeMarks).reduce((a, b) => (Number(a) || 0) + (Number(b) || 0), 0);
           const existingIdx = db.judgeScores.findIndex(s => s.judgeId === judgeId && s.participantId === participantId);
           if (existingIdx >= 0) {
             db.judgeScores[existingIdx].score = totalNum;
             db.judgeScores[existingIdx].marks = judgeMarks;
             db.judgeScores[existingIdx].updatedAt = new Date().toISOString();
           } else {
-            const part = db.participants?.find(p => p.id === participantId);
             db.judgeScores.push({
               id: `score_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
               judgeId,
               participantId,
-              categoryId: part?.categoryId || this.state.categoryFilter || 'cat_dancing_superstar',
+              categoryId: catId,
               score: totalNum,
               marks: judgeMarks,
               revisionCount: 0,
@@ -1052,6 +1096,14 @@ class LiveEventService {
             });
           }
         }
+
+        // Persist to Supabase
+        dbService.createJudgeScore({
+          judgeId,
+          participantId,
+          categoryId: catId,
+          score: totalNum
+        }).catch(e => console.warn('[LiveEvent] Judge score Supabase sync error:', e.message));
         break;
       }
 
@@ -1072,11 +1124,12 @@ class LiveEventService {
         }
         memoryStore.audienceVotes[participantId][studentId] = numericScore;
 
+        const voterId = studentId || `aud_${Date.now()}`;
+        const part = db.participants?.find(p => p.id === participantId) || this.state.participants.find(p => p.id === participantId);
+        const catId = part?.categoryId || this.state.categoryFilter || 'cat_dancing_superstar';
+
         // Sync to db.audienceVotes
         if (db.audienceVotes) {
-          const voterId = studentId || `aud_${Date.now()}`;
-          const part = db.participants?.find(p => p.id === participantId);
-          const catId = part?.categoryId || this.state.categoryFilter || 'cat_dancing_superstar';
           const existing = db.audienceVotes.find(v => (v.audienceId === voterId || v.studentId === voterId) && v.participantId === participantId);
           if (!existing) {
             db.audienceVotes.push({
@@ -1093,6 +1146,16 @@ class LiveEventService {
             existing.score = numericScore;
           }
         }
+
+        // Persist to Supabase
+        dbService.createAudienceVote({
+          audienceId: voterId,
+          participantId,
+          categoryId: catId,
+          eventId: db.events?.[0]?.id || 'evt_fts_2026',
+          score: numericScore,
+          regNo: studentId
+        }).catch(e => console.warn('[LiveEvent] Audience vote Supabase sync error:', e.message));
         break;
       }
 
