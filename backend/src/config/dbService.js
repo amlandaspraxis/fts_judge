@@ -4,6 +4,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import bcrypt from 'bcryptjs';
 
+const defaultStudentPasswordHash = bcrypt.hashSync('password123', 10);
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -287,7 +289,7 @@ export const dbService = {
       id,
       name: userData.name.trim(),
       email: userData.email.trim().toLowerCase(),
-      passwordHash: userData.passwordHash,
+      passwordHash: userData.passwordHash || defaultStudentPasswordHash,
       role: userData.role,
       status: userData.status || 'ACTIVE',
       createdAt: new Date().toISOString()
@@ -1138,7 +1140,7 @@ export const dbService = {
             id: vote.audienceId,
             name: vote.regNo ? `Student (${vote.regNo})` : `Student (${vote.audienceId})`,
             email: userEmail,
-            password_hash: '$2a$10$tQ120eR94uO.c2V2dFvQReI7mDqXz3J7w4U4k1IeX/0CgC1E4u1e2',
+            password_hash: defaultStudentPasswordHash,
             role: 'AUDIENCE',
             status: 'ACTIVE'
           });

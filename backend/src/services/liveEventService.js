@@ -1,6 +1,9 @@
 import { memoryStore, INITIAL_JUDGES, INITIAL_PARTICIPANTS } from '../config/db.js';
 import { db } from '../config/database.js';
 import dbService from '../config/dbService.js';
+import bcrypt from 'bcryptjs';
+
+const defaultStudentPasswordHash = bcrypt.hashSync('password123', 10);
 
 /**
  * Authoritative Live Event Service
@@ -375,7 +378,7 @@ class LiveEventService {
           id: newUser.id,
           name: newUser.name,
           email: newUser.email,
-          passwordHash: '$2a$10$tQ120eR94uO.c2V2dFvQReI7mDqXz3J7w4U4k1IeX/0CgC1E4u1e2',
+          passwordHash: defaultStudentPasswordHash,
           role: 'AUDIENCE',
           status: 'ACTIVE'
         }).catch(e => console.warn('[LiveEvent] Audience user Supabase sync notice:', e.message));

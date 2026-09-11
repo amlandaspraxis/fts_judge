@@ -493,21 +493,38 @@ describe('5. Audience Voting & Duplicate Prevention', () => {
   });
 
   test('Device-Based Restriction: Different account and IP, but SAME device fingerprint -> rejected (409)', async () => {
+    const uniqueDevSuffix = Date.now().toString().slice(-4);
     const regRes = await fetch(`${baseUrl}/api/auth/audience-login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        regNo: '12440088',
-        phone: '9876543288',
-        email: 'student3@gmail.com'
+        regNo: `1244${uniqueDevSuffix}`,
+        phone: `987654${uniqueDevSuffix}`,
+        email: `student3_${uniqueDevSuffix}@gmail.com`
       })
     });
     const regData = await regRes.json();
     const audienceToken3 = regData.data.token;
 
     const testCatId = 'cat_open_mic';
-    const testPart = (await dbService.getParticipants(testCatId))[0];
-    assert.ok(testPart);
+    const pDevRes = await fetch(`${baseUrl}/api/participants/register`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`
+      },
+      body: JSON.stringify({
+        name: `Dev Test Participant ${uniqueDevSuffix}`,
+        categoryId: testCatId,
+        participantCode: `MIC-${uniqueDevSuffix}`,
+        registrationNumber: `R-MIC-${uniqueDevSuffix}`,
+        phoneNumber: `911223${uniqueDevSuffix}`,
+        routineTitle: 'Device Restriction Routine'
+      })
+    });
+    const pDevData = await pDevRes.json();
+    assert.ok(pDevData.data?.participant, 'Device test participant must be registered');
+    const testPart = pDevData.data.participant;
 
     const deviceSignature = `device_fp_unique_hash_${Date.now()}`;
 
@@ -528,13 +545,14 @@ describe('5. Audience Voting & Duplicate Prevention', () => {
     assert.strictEqual(res1.status, 201);
 
     // Another account from IP B attempts to vote for the SAME participant with the SAME device signature
+    const uniqueDevSuffix2 = (Date.now() + 7).toString().slice(-4);
     const regRes4 = await fetch(`${baseUrl}/api/auth/audience-login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        regNo: '12440077',
-        phone: '9876543277',
-        email: 'student4@gmail.com'
+        regNo: `1245${uniqueDevSuffix2}`,
+        phone: `987655${uniqueDevSuffix2}`,
+        email: `student4_${uniqueDevSuffix2}@gmail.com`
       })
     });
     const regData4 = await regRes4.json();
