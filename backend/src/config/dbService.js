@@ -294,14 +294,14 @@ export const dbService = {
     };
 
     if (useSupabase()) {
-      const { error } = await supabase.from('users').insert({
+      const { error } = await supabase.from('users').upsert({
         id: record.id,
         name: record.name,
         email: record.email,
         password_hash: record.passwordHash,
         role: record.role,
         status: record.status
-      });
+      }, { onConflict: 'id' });
       if (error) throw new Error(error.message);
       return record;
     }
