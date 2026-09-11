@@ -415,13 +415,14 @@ describe('5. Audience Voting & Duplicate Prevention', () => {
       body: JSON.stringify({
         name: 'Second Vocalist',
         categoryId: singingCatId,
-        participantCode: 'SNG-P2',
-        registrationNumber: 'R-SNG-P2',
+        participantCode: `SNG-P2-${Date.now().toString().slice(-4)}`,
+        registrationNumber: `R-SNG-P2-${Date.now().toString().slice(-4)}`,
         phoneNumber: '9112233446',
         routineTitle: 'Jazz Standards'
       })
     });
     const p2Data = await p2Res.json();
+    assert.ok(p2Data.data?.participant, 'Participant 2 must be registered');
     const voteParticipant2 = p2Data.data.participant;
 
     // Same user votes for Participant 2 -> Success (201)
@@ -508,7 +509,7 @@ describe('5. Audience Voting & Duplicate Prevention', () => {
     const testPart = (await dbService.getParticipants(testCatId))[0];
     assert.ok(testPart);
 
-    const deviceSignature = 'device_fp_unique_hash_12345';
+    const deviceSignature = `device_fp_unique_hash_${Date.now()}`;
 
     // First vote with this device signature from IP A for testPart
     const res1 = await fetch(`${baseUrl}/api/audience/vote`, {
@@ -581,13 +582,14 @@ describe('5. Audience Voting & Duplicate Prevention', () => {
       body: JSON.stringify({
         name: 'Speed Speaker',
         categoryId: elocutionCatId,
-        participantCode: 'ELO-RACE',
-        registrationNumber: 'R-ELO-RACE',
+        participantCode: `ELO-RACE-${Date.now().toString().slice(-4)}`,
+        registrationNumber: `R-ELO-RACE-${Date.now().toString().slice(-4)}`,
         phoneNumber: '9112233999',
         routineTitle: 'The Future of AI'
       })
     });
     const pData = await pRes.json();
+    assert.ok(pData.data?.participant, 'Race participant must be registered');
     const racePart = pData.data.participant;
 
     // Fire 2 simultaneous requests for the same participant
